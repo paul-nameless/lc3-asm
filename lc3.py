@@ -116,6 +116,7 @@ def tok_dot_args(arg):
     if not arg:
         return []
     if arg.startswith('"'):
+        arg = arg.replace('\\n', '\n')
         return [Token(Type.STR, arg.replace('"', ''))]
     elif arg.startswith('\''):
         return [Token(Type.STR, arg.replace('\'', ''))]
@@ -123,8 +124,10 @@ def tok_dot_args(arg):
         return [Token(Type.CONST, int('0' + arg, 16))]
     elif arg.startswith('b'):
         return [Token(Type.CONST, int('0' + arg, 2))]
+    elif arg.startswith('#'):
+        return [Token(Type.CONST, int(arg[1:], 10))]
     else:
-        return [Token(Type.CONST, int(arg))]
+        return [Token(Type.CONST, int(arg, 10))]
     return []
 
 
@@ -184,7 +187,7 @@ def asm_pass_one(code):
                 lc += tokens[1].v
         else:
             if tokens[1].v == '.STRINGZ':
-                lc += len(tokens[2].v)
+                lc += len(tokens[2].v) + 1
             if tokens[1].v == '.FILL':
                 lc += 1
             if tokens[1].t == Type.OP:
@@ -268,9 +271,11 @@ def asm_pass_two(symbol_table, lines):
         if tokens[0].t == Type.LABEL:
             if tokens[1].v == '.STRINGZ':
                 print('ENCODE_STRINGZ', tokens[2].v)
-                for c in tokens[2].v:
-                    data.append(ord(c))
+                encoded = tokens[2].v.encode()
+                for c in encoded:
+                    data.append(c)
                 data.append(0)
+
             if tokens[1].v == '.FILL':
                 print('ENCODE_FILL_OP:', tokens[2].v)
                 data.append(tokens[2].v)
