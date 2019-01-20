@@ -1,0 +1,13 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	LABEL0            301D
+//	LABEL1            301E
+//	LABEL2            301F
+//	LABEL3            3020
+//	LABEL4            3021
+//	LABEL5            3022
+//	LABEL6            3023
+//	LABEL7            3024
+
