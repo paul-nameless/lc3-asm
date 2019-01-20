@@ -266,6 +266,11 @@ def asm_pass_two(symbol_table, lines):
             for _ in range(tokens[1].v):
                 data.append(0x0)
         if tokens[0].t == Type.LABEL:
+            if tokens[1].v == '.STRINGZ':
+                print('ENCODE_STRINGZ', tokens[2].v)
+                for c in tokens[2].v:
+                    data.append(ord(c))
+                data.append(0)
             if tokens[1].v == '.FILL':
                 print('ENCODE_FILL_OP:', tokens[2].v)
                 data.append(tokens[2].v)

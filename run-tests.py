@@ -8,7 +8,7 @@ def main():
     for filename in files:
         base = os.path.splitext(filename)[0]
         print(f'{"-" * 32} Testing {base} {"-" * 32}')
-        rc = os.system(f'python lc3.py {filename}')
+        rc = os.system(f'python3 lc3.py {filename}')
         if rc:
             report[filename] = False
             continue
