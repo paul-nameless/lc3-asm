@@ -43,7 +43,8 @@ def main():
         dump.frombytes(f.read(max_read))
         dump.byteswap()
         for op in dump[1:]:
-            print(f'{hex(origin)}: ({hex(op):>6}) {parse_op(op)}')
+            print(
+                f'{hex(origin)}: ({hex(op):>6}) {parse_op(op)} | {chr(op) if op < 256 else ""}')
             origin += 1
 
 

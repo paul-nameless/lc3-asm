@@ -2,20 +2,29 @@
 
 LC-3 assembler written in pure python
 
-## Usage
+## Getting Started
 
-Assemble
+### Assemble
 
 ```
 python3 lc3.py [file]  # lc3 *.asm file
 # Output *.obj file that can be run with simulator
 ```
 
-Run tests:
+### Run tests:
 
 ```
 python3 run-tests.py
 ```
+
+### Learning LC-3
+
+You can find usefull information and Instruction Set Architecture (ISA) [here](https://github.com/justinmeiners/lc3-vm) and [here](https://github.com/paul-nameless/lc3-vm)
+
+Also you may find usefull desctiptions in `assembler.h` file to better understand how to implement it [here](https://github.com/davedennis/LC3-Assembler)
+
+
+### Download
 
 You can download simulator [here](http://highered.mheducation.com/sites/0072467509/student_view0/lc-3_simulator.html)
 

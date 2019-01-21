@@ -31,48 +31,39 @@ TRAPS = {
 }
 
 OPS = {
-    # 0x0
     'BR':  0x0,    # 0b0 branch
-    # 'BR':  0b0000000,    # 0b0 branch
-    # 'BRn': 0b0000100,    # 0b0 branch if n
-    # 'BRz': 0b0000010,    # 0b0 branch
-    # 'BRp': 0b0000001,    # 0b0 branch
-    # 'BRzp': 0b0000011,    # 0b0 branch
-    # 'BRnp': 0b0000101,    # 0b0 branch
-    # 'BRnz': 0b0000110,    # 0b0 branch
-    # 'BRnzp': 0b0000111,    # 0b0 branch
     'BRn': 0x0,    # 0b0 branch if n
     'BRz': 0x0,    # 0b0 branch
     'BRp': 0x0,    # 0b0 branch
-    'BRzp': 0x0,    # 0b0 branch
-    'BRnp': 0x0,    # 0b0 branch
-    'BRnz': 0x0,    # 0b0 branch
-    'BRnzp': 0x0,    # 0b0 branch
+    'BRzp': 0x0,   # 0b0 branch
+    'BRnp': 0x0,   # 0b0 branch
+    'BRnz': 0x0,   # 0b0 branch
+    'BRnzp': 0x0,  # 0b0 branch
 
-    'ADD': 0x1,   # 0b1 add
-    'LD': 0x2,    # 0b10 load
-    'ST': 0x3,    # 0b11 store
-    'JSR': 0x4,   # 0b100 jump register
-    'JSRR': 0x4,  # 0b100 jump register
-    'AND': 0x5,   # 0b101 bitwise and
-    'LDR': 0x6,   # 0b110 load register
-    'STR': 0x7,   # 0b111 store register
-    'RTI': 0x8,   # 0b1000 unused
-    'NOT': 0x9,   # 0b1001 bitwise not
-    'LDI': 0xA,   # 0b1010 load indirect
-    'STI': 0xB,   # 0b1011 store indirect
-    'RET': 0xC,   # 0b1100 return
-    'JMP': 0xC,   # 0b1100 jump
-    'RES': 0xD,   # 0b1101 reserved (unused)
-    'LEA': 0xE,   # 0b1110 load effective address
-    'TRAP': 0xF,  # ob1111 execute trap
+    'ADD': 0x1,    # 0b1 add
+    'LD': 0x2,     # 0b10 load
+    'ST': 0x3,     # 0b11 store
+    'JSR': 0x4,    # 0b100 jump register
+    'JSRR': 0x4,   # 0b100 jump register
+    'AND': 0x5,    # 0b101 bitwise and
+    'LDR': 0x6,    # 0b110 load register
+    'STR': 0x7,    # 0b111 store register
+    'RTI': 0x8,    # 0b1000 unused
+    'NOT': 0x9,    # 0b1001 bitwise not
+    'LDI': 0xA,    # 0b1010 load indirect
+    'STI': 0xB,    # 0b1011 store indirect
+    'RET': 0xC,    # 0b1100 return
+    'JMP': 0xC,    # 0b1100 jump
+    'RES': 0xD,    # 0b1101 reserved (unused)
+    'LEA': 0xE,    # 0b1110 load effective address
+    'TRAP': 0xF,   # ob1111 execute trap
 
     **TRAPS
 }
 
 
 DOTS = {
-    '.ORIG': None,  # write handlers?
+    '.ORIG': None,
     '.END': None,
     '.FILL': None,
     '.BLKW': None,
@@ -111,14 +102,27 @@ def tok_op_args(line):
     return args
 
 
+def is_int(arg):
+    try:
+        int(arg)
+        return True
+    except ValueError:
+        return False
+
+
 def tok_dot_args(arg):
     arg = arg.strip()
     if not arg:
         return []
     if arg.startswith('"'):
+        arg = arg.replace('\\t', '\t')
         arg = arg.replace('\\n', '\n')
+        arg = arg.replace("\\e", '\x1b')
         return [Token(Type.STR, arg.replace('"', ''))]
     elif arg.startswith('\''):
+        arg = arg.replace('\\t', '\t')
+        arg = arg.replace('\\n', '\n')
+        arg = arg.replace("\\e", '\x1b')
         return [Token(Type.STR, arg.replace('\'', ''))]
     elif arg.startswith('x'):
         return [Token(Type.CONST, int('0' + arg, 16))]
@@ -126,8 +130,11 @@ def tok_dot_args(arg):
         return [Token(Type.CONST, int('0' + arg, 2))]
     elif arg.startswith('#'):
         return [Token(Type.CONST, int(arg[1:], 10))]
-    else:
+    elif is_int(arg):
         return [Token(Type.CONST, int(arg, 10))]
+    else:
+        # else it's a label
+        return [Token(Type.LABEL, arg)]
     return []
 
 
@@ -135,6 +142,7 @@ def tok(line):
     line = line.strip()
     if not line or line.startswith(';'):
         return None
+    line = line.replace('\t', ' ')
     line, *_ = line.split(';', maxsplit=1)
     res = line.split(' ', maxsplit=1)
 
@@ -155,6 +163,7 @@ def tok(line):
 
 
 def check_syntax(tokens):
+    # TODO:
     pass
 
 
@@ -163,7 +172,7 @@ def asm_pass_one(code):
     lines = []
     lc = 0  # location counter
     for line_number, line in enumerate(code.splitlines(), 1):
-        # assert len(line) > MAX_LINE_LENGTH, 'line is too long'
+        assert len(line) < MAX_LINE_LENGTH, 'line is too long'
 
         tokens = tok(line)
         if not tokens:
@@ -185,7 +194,11 @@ def asm_pass_one(code):
                 lc += 1
             elif tokens[0].v == '.BLKW':
                 lc += tokens[1].v
-        else:
+            elif tokens[0].v == '.FILL':
+                lc += 1
+            elif tokens[0].v == '.STRINGZ':
+                lc += len(tokens[1].v) + 1
+        elif len(tokens) != 1:
             if tokens[1].v == '.STRINGZ':
                 lc += len(tokens[2].v) + 1
             if tokens[1].v == '.FILL':
@@ -193,6 +206,7 @@ def asm_pass_one(code):
             if tokens[1].t == Type.OP:
                 lc += 1
 
+        print('>', lc)
         lines.append((tokens, lc))
 
     print(f'{"":>6}  {".END":<44}')
@@ -247,7 +261,15 @@ def encode_op(tokens, symbol_table, lc):
             opcode |= 1 << 10
         if 'p' in tokens[0].v:
             opcode |= 1 << 9
-        return opcode | ((symbol_table[tokens[1].v] - lc) & 0b111111111)
+
+        if tokens[1].t == Type.LABEL:
+            pcoffset9 = ((symbol_table[tokens[1].v] - lc) & 0b111111111)
+        elif tokens[1].t == Type.CONST:
+            pcoffset9 = tokens[1].v & 0b111111111
+        else:
+            raise Exception()
+
+        return opcode | pcoffset9
     if tokens[0].v in ('LD', 'LEA', 'LDI', 'ST', 'STI'):
         dr = REGS[tokens[1].v] << 9
         return opcode | dr | ((symbol_table[tokens[2].v] - lc) & 0b111111111)
@@ -268,7 +290,17 @@ def asm_pass_two(symbol_table, lines):
             print('ENCODE_BLKW:')
             for _ in range(tokens[1].v):
                 data.append(0x0)
-        if tokens[0].t == Type.LABEL:
+        if tokens[0].v == '.FILL':
+            print('ENCODE_BLKW:')
+            data.append(tokens[1].v)
+        if tokens[0].v == '.STRINGZ':
+            print('ENCODE_STRINGZ1', tokens[1].v)
+            encoded = tokens[1].v.encode()
+            for c in encoded:
+                data.append(c)
+            data.append(0)
+
+        if tokens[0].t == Type.LABEL and len(tokens) != 1:
             if tokens[1].v == '.STRINGZ':
                 print('ENCODE_STRINGZ', tokens[2].v)
                 encoded = tokens[2].v.encode()
@@ -278,7 +310,12 @@ def asm_pass_two(symbol_table, lines):
 
             if tokens[1].v == '.FILL':
                 print('ENCODE_FILL_OP:', tokens[2].v)
-                data.append(tokens[2].v)
+                if tokens[2].t == Type.CONST:
+                    data.append(tokens[2].v)
+                elif tokens[2].t == Type.LABEL:
+                    data.append(symbol_table[tokens[2].v])
+                else:
+                    raise Exception()
             elif tokens[1].t == Type.OP:
                 print('ENCODE_LABEL_OP:', hex(
                     encode_op(tokens[1:], symbol_table, lc)))
@@ -288,25 +325,32 @@ def asm_pass_two(symbol_table, lines):
     return data
 
 
+def dump_symbol_table(symbol_table):
+    with open('2048-out.sym', 'w') as f:
+        f.write('\n\n\n\n')
+        for a, b in symbol_table.items():
+            f.write(f'//\t{a:<16}  {hex(b)[2:].upper()}\n')
+
+
 def main():
     if len(sys.argv) < 2:
-        print('lc3.py [image-file]')
+        print('lc3.py [asm-file]')
         exit(2)
 
     file_path = sys.argv[1]
 
     if not os.path.isfile(file_path):
         print('No such file')
-        exit(1)
+        exit(2)
 
     with open(file_path) as f:
         code = f.read()
 
+    print('STARTING PASS 1')
     symbol_table, lines = asm_pass_one(code)
-    print('Pass one finished')
-    print('Symbol_Table:', {a: hex(b) for a, b in symbol_table.items()})
-    # exit(0)
+    dump_symbol_table(symbol_table)
 
+    print('STARTING PASS 2')
     bin_data = asm_pass_two(symbol_table, lines)
     print(bin_data.tobytes().hex())
     file_name = os.path.splitext(file_path)[0]
