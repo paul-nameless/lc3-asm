@@ -17,6 +17,18 @@ python3 lc3.py [file]  # lc3 *.asm file
 python3 run-tests.py
 ```
 
+### Debug
+
+To debug, you can use simple disassembler written by me:
+
+```
+python3 disasm.py [obj-file]
+```
+
+I found it very usefull trying to understand what went wrong (invalid address in symbol table, invalid LC count, invalid opcode encoding, etc.).
+
+There is a lot of debug information printing out when assembling but it can be ignored or deleted.
+
 ### Learning LC-3
 
 You can find usefull information and Instruction Set Architecture (ISA) [here](https://github.com/justinmeiners/lc3-vm) and [here](https://github.com/paul-nameless/lc3-vm)
