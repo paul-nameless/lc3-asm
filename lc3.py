@@ -167,159 +167,163 @@ def check_syntax(tokens):
     pass
 
 
+def incr(lc, tokens): return lc + 1
+
+
 def asm_pass_one(code):
+    CONDS = {
+        '.ORIG': lambda lc, tokens: tokens[1].v,
+        '.BLKW': lambda lc, tokens: lc + tokens[1].v,
+        '.FILL': incr,
+        '.STRINGZ': lambda lc, tokens: lc + len(tokens[1].v) + 1,
+        **{op: incr for op, _ in OPS.items()},
+    }
     symbol_table = {}
     lines = []
     lc = 0  # location counter
+
     for line_number, line in enumerate(code.splitlines(), 1):
         assert len(line) < MAX_LINE_LENGTH, 'line is too long'
-
         tokens = tok(line)
+
         if not tokens:
             continue
         if tokens[0].v == '.END':
             break
 
         print(f'{hex(lc):>6} ({line_number}): {line.strip():<44} | {tokens}')
-
         check_syntax(tokens)
 
         if tokens[0].t == Type.LABEL:
             symbol_table[tokens[0].v] = lc
 
         if tokens[0].t != Type.LABEL:
-            if tokens[0].v == '.ORIG':
-                lc = tokens[1].v
-            elif tokens[0].t == Type.OP:
-                lc += 1
-            elif tokens[0].v == '.BLKW':
-                lc += tokens[1].v
-            elif tokens[0].v == '.FILL':
-                lc += 1
-            elif tokens[0].v == '.STRINGZ':
-                lc += len(tokens[1].v) + 1
+            lc = CONDS[tokens[0].v](lc, tokens)
         elif len(tokens) != 1:
-            if tokens[1].v == '.STRINGZ':
-                lc += len(tokens[2].v) + 1
-            if tokens[1].v == '.FILL':
-                lc += 1
-            if tokens[1].t == Type.OP:
-                lc += 1
+            lc = CONDS[tokens[1].v](lc, tokens[1:])
 
-        print('>', lc)
         lines.append((tokens, lc))
 
-    print(f'{"":>6}  {".END":<44}')
     print('LC:', hex(lc))
     return symbol_table, lines
 
 
-def encode_op(tokens, symbol_table, lc):
-    if tokens[0].v in TRAPS:
-        return OPS['TRAP'] << 12 | TRAPS[tokens[0].v]
-    opcode = OPS[tokens[0].v] << 12
-    if tokens[0].v == 'RTI':
-        return opcode
-    if tokens[0].v == 'TRAP':
-        return opcode | tokens[1].v & 0b11111111
-    if tokens[0].v == 'RET':
-        return opcode | 0b111 << 6
-    if tokens[0].v == 'JMP':
-        return opcode | REGS[tokens[1].v] << 6
-    if tokens[0].v == 'NOT':
-        return opcode | REGS[tokens[1].v] << 9 | REGS[tokens[2].v] << 6 | 0x3f
-    if tokens[0].v == 'JSR':
-        pcoffset11 = ((symbol_table[tokens[1].v] - lc) & 0b11111111111)
-        return opcode | 1 << 11 | pcoffset11
-    if tokens[0].v == 'JSRR':
-        return opcode | REGS[tokens[1].v] << 6
-    if tokens[0].v in ('LDR', 'STR'):
-        dr = REGS[tokens[1].v] << 9
-        base_r = REGS[tokens[2].v] << 6
-        assert tokens[3].v < 2 ** 5
-        offset6 = ((UINT16_MAX + tokens[3].v) & 0b111111)
-        return opcode | dr | base_r | offset6
-    if tokens[0].v in ('ADD', 'AND'):
-        dr = REGS[tokens[1].v] << 9
-        sr1 = REGS[tokens[2].v] << 6
-        if tokens[3].t == Type.REG:
-            sr2 = REGS[tokens[3].v]
-            return opcode | dr | sr1 | sr2
-        else:
-            assert tokens[3].v < 2 ** 5
-            imm5 = ((UINT16_MAX + tokens[3].v) & 0b11111)
-            return opcode | dr | sr1 | 1 << 5 | imm5
-    if tokens[0].v.startswith('BR'):
-        if tokens[0].v == 'BR':
-            opcode |= 1 << 11
-            opcode |= 1 << 10
-            opcode |= 1 << 9
+def encode_ldr_str(op, sym, lc, toks):
+    dr = REGS[toks[1].v] << 9
+    base_r = REGS[toks[2].v] << 6
+    assert toks[3].v < 2 ** 5
+    offset6 = ((UINT16_MAX + toks[3].v) & 0b111111)
+    return op | dr | base_r | offset6
 
-        if 'n' in tokens[0].v:
-            opcode |= 1 << 11
-        if 'z' in tokens[0].v:
-            opcode |= 1 << 10
-        if 'p' in tokens[0].v:
-            opcode |= 1 << 9
 
-        if tokens[1].t == Type.LABEL:
-            pcoffset9 = ((symbol_table[tokens[1].v] - lc) & 0b111111111)
-        elif tokens[1].t == Type.CONST:
-            pcoffset9 = tokens[1].v & 0b111111111
-        else:
-            raise Exception()
+def encode_add_and(op, sym, lc, toks):
+    dr = REGS[toks[1].v] << 9
+    sr1 = REGS[toks[2].v] << 6
+    if toks[3].t == Type.REG:
+        sr2 = REGS[toks[3].v]
+        return op | dr | sr1 | sr2
+    else:
+        assert toks[3].v < 2 ** 5
+        imm5 = ((UINT16_MAX + toks[3].v) & 0b11111)
+        return op | dr | sr1 | 1 << 5 | imm5
 
-        return opcode | pcoffset9
-    if tokens[0].v in ('LD', 'LEA', 'LDI', 'ST', 'STI'):
-        dr = REGS[tokens[1].v] << 9
-        return opcode | dr | ((symbol_table[tokens[2].v] - lc) & 0b111111111)
+
+def encode_br(op, sym, lc, toks):
+    if toks[0].v == 'BR':
+        op |= 1 << 11
+        op |= 1 << 10
+        op |= 1 << 9
+    if 'n' in toks[0].v:
+        op |= 1 << 11
+    if 'z' in toks[0].v:
+        op |= 1 << 10
+    if 'p' in toks[0].v:
+        op |= 1 << 9
+
+    if toks[1].t == Type.LABEL:
+        pcoffset9 = ((sym[toks[1].v] - lc) & 0b111111111)
+    elif toks[1].t == Type.CONST:
+        pcoffset9 = toks[1].v & 0b111111111
+    else:
+        raise Exception()
+
+    return op | pcoffset9
+
+
+def encode_ld_st(op, sym, lc, toks):
+    dr = REGS[toks[1].v] << 9
+    return op | dr | ((sym[toks[2].v] - lc) & 0b111111111)
+
+
+def encode_traps(op, sym, lc, toks):
+    return OPS['TRAP'] << 12 | TRAPS[toks[0].v]
+
+
+encode = {
+    'RTI': lambda op, *_: op,
+    'TRAP': lambda op, sym, lc, toks: op | toks[1].v & 0b11111111,
+    'RET': lambda op, *_: op | 0b111 << 6,
+    'JMP': lambda op, sym, lc, toks: op | REGS[toks[1].v] << 6,
+    'NOT': lambda op, sym, lc, toks: op | REGS[toks[1].v] << 9 | REGS[toks[2].v] << 6 | 0x3f,
+    'JSR': lambda op, sym, lc, toks: op | 1 << 11 | ((sym[toks[1].v] - lc) & 0b11111111111),
+    'JSRR': lambda op, sym, lc, toks: op | REGS[toks[1].v] << 6,
+    'LDR': encode_ldr_str,
+    'STR': encode_ldr_str,
+    'AND': encode_add_and,
+    'ADD': encode_add_and,
+    'BR': encode_br,
+    'BRn': encode_br,
+    'BRz': encode_br,
+    'BRp': encode_br,
+    'BRzp': encode_br,
+    'BRnp': encode_br,
+    'BRnz': encode_br,
+    'BRnzp': encode_br,
+    'LD': encode_ld_st,
+    'LEA': encode_ld_st,
+    'LDI': encode_ld_st,
+    'ST': encode_ld_st,
+    'STI': encode_ld_st,
+
+    'GETC': encode_traps,
+    'OUT': encode_traps,
+    'PUTS': encode_traps,
+    'IN': encode_traps,
+    'PUTSP': encode_traps,
+    'HALT': encode_traps,
+}
 
 
 def asm_pass_two(symbol_table, lines):
-    print('####-PASS TWO-####')
+    CONDS = {
+        '.BLKW': lambda tokens, data, sym, lc:
+        data.fromlist([0x0 for _ in range(tokens[1].v)]),
+
+        '.FILL': lambda tokens, data, sym, lc: tokens[1].t == Type.CONST and
+        data.append(tokens[1].v) or tokens[1].t == Type.LABEL and
+        data.append(sym[tokens[1].v]),
+
+        '.STRINGZ': lambda tokens, data, sym, lc:
+        data.fromlist([c for c in tokens[1].v.encode()]) or data.append(0x0),
+
+        **{
+            op: lambda toks, data, sym, lc:
+            data.append(encode[toks[0].v](OPS[toks[0].v] << 12, sym, lc, toks))
+            for op, _ in OPS.items()
+        }
+    }
     data = array.array("H", [])
     data.append(lines[0][0][1].v)
+
     for tokens, lc in lines[1:]:
-        print(tokens)
-        if tokens[0].t == Type.DOT and tokens[0].v == '.END':
+        if tokens[0].v == '.END':
             break
-        if tokens[0].t == Type.OP:
-            print('ENCODE_OP:', hex(encode_op(tokens, symbol_table, lc)))
-            data.append(encode_op(tokens, symbol_table, lc))
-        if tokens[0].v == '.BLKW':
-            print('ENCODE_BLKW:')
-            for _ in range(tokens[1].v):
-                data.append(0x0)
-        if tokens[0].v == '.FILL':
-            print('ENCODE_BLKW:')
-            data.append(tokens[1].v)
-        if tokens[0].v == '.STRINGZ':
-            print('ENCODE_STRINGZ1', tokens[1].v)
-            encoded = tokens[1].v.encode()
-            for c in encoded:
-                data.append(c)
-            data.append(0)
+        print(tokens)
 
-        if tokens[0].t == Type.LABEL and len(tokens) != 1:
-            if tokens[1].v == '.STRINGZ':
-                print('ENCODE_STRINGZ', tokens[2].v)
-                encoded = tokens[2].v.encode()
-                for c in encoded:
-                    data.append(c)
-                data.append(0)
-
-            if tokens[1].v == '.FILL':
-                print('ENCODE_FILL_OP:', tokens[2].v)
-                if tokens[2].t == Type.CONST:
-                    data.append(tokens[2].v)
-                elif tokens[2].t == Type.LABEL:
-                    data.append(symbol_table[tokens[2].v])
-                else:
-                    raise Exception()
-            elif tokens[1].t == Type.OP:
-                print('ENCODE_LABEL_OP:', hex(
-                    encode_op(tokens[1:], symbol_table, lc)))
-                data.append(encode_op(tokens[1:], symbol_table, lc))
+        if tokens[0].t != Type.LABEL:
+            CONDS[tokens[0].v](tokens, data, symbol_table, lc)
+        elif len(tokens) != 1:
+            CONDS[tokens[1].v](tokens[1:], data, symbol_table, lc)
 
     data.byteswap()
     return data

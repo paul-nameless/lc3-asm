@@ -45,7 +45,7 @@ def main():
         for op in dump[1:]:
             print(
                 f'{hex(origin)}: ({hex(op):>6}) {parse_op(op)} | '
-                '{chr(op) if op < 256 else ""}')
+                f'{chr(op) if op < 256 else ""}')
             origin += 1
 
 
